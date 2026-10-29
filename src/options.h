@@ -1,0 +1,69 @@
+#pragma once
+
+typedef enum {
+    FFT_NONE,
+    FFT_REAL,
+} fft_precision_t;
+
+typedef struct {
+    real_t lambda;
+
+    real_t eps_rel;
+    int_t max_iter;
+    int_t B;
+    real_t undersampling;
+
+    real_t eps_gamma;
+    real_t enum_cutoff;
+
+    fft_precision_t gamma_precision;
+    fft_precision_t fft_precision;
+    int_t use_fft_precompute;
+    int_t error_bound;  // compute truncation diagnostics in series() (see multinomial/error_bound.h)
+
+    int_t gamma_newton;     // 1 = Newton on saddlepoint surrogate, 0 = exact grid refinement
+    int_t poisson;          // 1 = Poissonised Cauchy-integral evaluator, 0 = polynomial convolution
+    int_t fast_interval;    // 1 = O(K) closed form / O(K log K) GreedyModeFind, 0 = O(K*N^2) DP
+    int_t fast_exhaustive;  // 1 = per-node bounds pruning, 0 = bisection in last two categories
+    int_t extrapolate;      // 0 = off, 1 = report extrapolated, 2 = stop on error estimate
+
+    int_t threads;
+    int_t vecs_per_thread;
+
+    double max_time;    // max execution time in seconds (< 0 or INFINITY for no limit)
+    struct timespec t_start;
+
+    int_t verbose;
+    int_t print_freq;
+} options_t;
+
+static void set_options_default(options_t* options) {
+    options->lambda = 0.0;  // 0 for LLR, 1 for chi-squared, NAN for pmf
+
+    options->eps_rel = 1e-3;
+    options->max_iter = 10000;
+    options->B = 50;
+    options->undersampling = 1.0;
+
+    options->eps_gamma = 1e-2;
+    options->enum_cutoff = 10.0;
+
+    options->gamma_newton = 1;
+    options->poisson = 1;
+    options->fast_interval = 1;
+    options->fast_exhaustive = 1;
+    options->extrapolate = 2;
+
+    options->gamma_precision = FFT_REAL;
+    options->fft_precision = FFT_REAL;
+    options->use_fft_precompute = 1;
+    options->error_bound = 0;
+
+    options->threads = 1;
+    options->vecs_per_thread = 1;
+
+    options->max_time = -1.0;
+
+    options->verbose = 0;
+    options->print_freq = 100;
+}
