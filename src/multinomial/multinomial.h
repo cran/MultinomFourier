@@ -13,15 +13,20 @@ typedef struct {
     real_t* restrict log_probs;
     cell_t* restrict matrix;
     mf_quad_t p0;
+    real_t log_p0;
+    real_t log_ties;  // log of the number of permutations of x0 tied with it (see fill_p0)
     real_t r0;
     real_t T;
     real_t W;
     real_t gamma;
     real_t l_rate;
+    real_t log_scale;  // log of the common magnitude factored out of every term of the series
 } multinomial;
 
 typedef struct {
+    double S0;
     double pval;
+    double log_pval;
     int_t converged;
     int_t terms;
     double p0;
@@ -40,11 +45,28 @@ typedef struct {
     real_t DQ_relative;
 } multinomial_result;
 
+// Format sign(x)*|x|*exp(log_scale) in decimal scientific notation, like printf's "%.*e", without
+// ever forming the product: the decimal exponent comes from the logarithm, so values far below the
+// range of double (or of __float128) print correctly instead of as 0. Used only by verbose output.
+static void fmt_scaled(char* buf, size_t len, mf_quad_t x, double log_scale, int digits) {
+    if (isnanq_quad(x) || isnan(log_scale)) { snprintf(buf, len, "nan"); return; }
+    if (!finiteq_quad(x) || isinf(log_scale)) { snprintf(buf, len, "%sinf", x < 0 ? "-" : ""); return; }
+    if (x == 0) { snprintf(buf, len, "%.*e", digits, 0.0); return; }
+    const double l10 = ((double)log_quad(fabsq_quad(x)) + log_scale)/M_LN10;
+    double e = floor(l10);
+    double m = pow(10.0, l10 - e);
+    const double r = pow(10.0, digits);
+    if (round(m*r) >= 10*r) { m /= 10; e += 1; }  // the mantissa would round to 10.0...
+    if (m < 1) { m *= 10; e -= 1; }               // or l10 - e rounded just below 0
+    snprintf(buf, len, "%s%.*fe%+03lld", x < 0 ? "-" : "", digits, m, (long long)e);
+}
+
 static multinomial* get_mult(const int_t N, const int_t K, const real_t* restrict probs, const options_t* options) {
     multinomial* mult = malloc(sizeof(multinomial));
     mult->K = K;
     mult->N = N;
     mult->probs = probs;
+    mult->log_scale = 0;
 
     mult->log_probs = malloc(K*sizeof(real_t));
     for (int_t k=0; k<K; k++) {
@@ -70,7 +92,36 @@ static void fill_p0(multinomial* mult, const int_t* restrict x0, const options_t
     int_t N = mult->N;
     real_t log_p0 = 0;
     for (int_t k=0; k<K; k++) log_p0 += reward_logp(mult->log_probs[k], x0[k]);
-    mult->p0 = expq(lgac[N] + log_p0);
+    mult->log_p0 = lgac[N] + log_p0;
+    mult->p0 = expq(mult->log_p0);
+
+    // Atom at S0: every permutation of x0 among categories with equal probability has probability
+    // p0 and the same value of the statistic (h_k depends on k only through p_k), so it is tied
+    // with the observation. Their number is prod_h u_h! / prod_j u_hj!, where u_h is the size of
+    // the h-th group of equal probabilities and u_hj the multiplicity of the j-th distinct count
+    // inside it. Other ties (not permutations) are not counted.
+    char* done = calloc(K, 1);
+    real_t log_ties = 0;
+    for (int_t i=0; i<K; i++) {
+        if (done[i]) continue;
+        const real_t pi = mult->probs[i];
+        int_t u = 0;
+        for (int_t j=i; j<K; j++) {
+            if (done[j] || ABS(mult->probs[j] - pi) > 1e-12*MAX(mult->probs[j], pi)) continue;
+            done[j] = 1;
+            u++;
+            int_t first = 1, c = 0;  // multiplicity of x0[j] among the group, counted at its first occurrence
+            for (int_t l=i; l<K; l++) {
+                if (ABS(mult->probs[l] - pi) > 1e-12*MAX(mult->probs[l], pi) || x0[l] != x0[j]) continue;
+                if (l < j) { first = 0; break; }
+                c++;
+            }
+            if (first) log_ties -= lgamma((double)c + 1);  // lgac may stop at N < K
+        }
+        log_ties += lgamma((double)u + 1);
+    }
+    free(done);
+    mult->log_ties = log_ties;
 }
 
 static void fill_probs(multinomial* mult) {
@@ -120,6 +171,18 @@ static real_t exhaustive_tie_tolerance(const multinomial* mult) {
         scale += m;
     }
     return EXHAUSTIVE_TIE_REL*scale;
+}
+
+// Exact sums the probability of every outcome in the tail as EXP(MAX_EXP + log p_x), a fixed
+// offset that keeps p_x in range only while log p_x > -MAX_EXP - 708 (p ~ 1e-612): below that the
+// terms are subnormal or zero and the p-value is wrong or -Inf with status 0. This shift is added
+// to the log-probability at the root, so it reaches every term, and is chosen so that the
+// observation's own probability p0 is scaled to 1 when it would otherwise fall below 1. Since
+// p >= p0, the tail mass is then at least 1, and terms down to p0*e^-708 stay normal. It is 0 when
+// log p0 >= -MAX_EXP, so p-values above about 1e-304 are computed exactly as before.
+static real_t exhaustive_log_shift(const multinomial* mult) {
+    const real_t s = -((real_t)MAX_EXP + mult->log_p0);
+    return (isfinite(s) && s > 0) ? s : 0;
 }
 
 static void fill_interval(multinomial* mult, const options_t* options) {
@@ -454,6 +517,10 @@ static void fill_gamma(multinomial* mult, multinomial_result* mult_res, const op
         if (gamma_precision == FFT_NONE) fill_shifts(mult, gamma);
     }
 
+    // Reference magnitude for the terms of the series: any value of the right order of magnitude
+    // works. The series is summed in units of exp(log_scale) and the result is assembled in logs.
+    mult->log_scale = isfinite(final_eval) ? final_eval : 0;
+
     if (mult_res->status == 0 && (isnan(gamma) || !isfinite(gamma))) {
         mult_res->status = 3; // Could not solve the optimization of gamma
     }
@@ -489,6 +556,9 @@ static void fill_mult1(multinomial* mult, multinomial_result* mult_res, const in
     fill_p0(mult, x0, options);
     fill_probs(mult);
     fill_rewards(mult, x0, options);
+    mult_res->S0 = mult->r0;
+    if (real_isnan(options->lambda)) mult_res->S0 += lgac[mult->N];
+    else mult_res->S0 = -2*mult_res->S0;
 }
 
 static void fill_mult2(multinomial* mult, multinomial_result* mult_res, const int_t* restrict x0, const options_t* options) {

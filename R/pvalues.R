@@ -1,5 +1,5 @@
 # Helper interno para construir el objeto S3 multinomfourier
-build_multfourier_s3 <- function(raw, x, p, elapsed, requested_method, stat_label) {
+build_multfourier_s3 <- function(raw, x, p, elapsed, requested_method, stat_label, exact_terms = NULL) {
   method_name <- if (requested_method == "flexible") {
     if (!is.null(raw$method) && raw$method == 1L) "fourier" else "exact"
   } else {
@@ -12,13 +12,15 @@ build_multfourier_s3 <- function(raw, x, p, elapsed, requested_method, stat_labe
   n_terms_val <- if (method_name == "fourier") as.integer(raw$terms) else NA_integer_
   q_val <- if (method_name == "fourier" && !is.null(raw$Q) && !is.na(raw$Q) && raw$Q > 0) as.integer(raw$Q) else NA_integer_
   dq_val <- if (method_name == "fourier" && !is.null(raw$D_Q)) as.numeric(raw$D_Q) else NA_real_
+  poissonized_val <- if (method_name == "fourier") !isTRUE(exact_terms) else NA
   
   # Status ID y mensajes sin punto al final:
   # 0: Converged
   # 1: Maximum time reached
   # 2: Maximum number of terms reached
   # 3: Could not solve the optimization of gamma
-  # 4: Numerical instability detected (magnitude explosion)
+  # 4: Numerical instability detected (series magnitude explosion, or Exact mass out of range)
+  # 5: First term of the series underflowed
   status_id <- as.integer(raw$status)
   status_msg <- switch(
     as.character(status_id),
@@ -26,7 +28,8 @@ build_multfourier_s3 <- function(raw, x, p, elapsed, requested_method, stat_labe
     "1" = "Maximum time reached",
     "2" = "Maximum number of terms reached",
     "3" = "Could not solve the optimization of gamma",
-    "4" = "Numerical instability detected (magnitude explosion)",
+    "4" = "Numerical instability detected",
+    "5" = "First term of the series underflowed; no p-value",
     "Unknown status"
   )
   
@@ -36,10 +39,27 @@ build_multfourier_s3 <- function(raw, x, p, elapsed, requested_method, stat_labe
     status_msg <- "Maximum number of terms reached"
   }
   
+  pval_val <- as.numeric(raw$pval)
+  log_pval_val <- as.numeric(raw$log_pval)
+  stat_value_val <- if (!is.null(raw$stat_value)) as.numeric(raw$stat_value) else NA_real_
+
+  # Check if p-value is smaller than 5e-324 (or underflow)
+  if (!is.na(log_pval_val) && is.finite(log_pval_val)) {
+    if (is.na(pval_val) || pval_val < 5e-324) {
+      pval_val <- NA_real_
+      if (status_id == 0L) {
+        warning("The p-value is too small to represent as a positive double.\n$pval was set to NA; use $log_pval.", call. = FALSE)
+      }
+    }
+  }
+
   out <- list(
     x = as.numeric(x),
     p = as.numeric(p),
-    pval = as.numeric(raw$pval),
+    stat_value = stat_value_val,
+    pval = pval_val,
+    log_pval = log_pval_val,
+    Poissonized = poissonized_val,
     stat = as.character(stat_label),
     method = as.character(method_name),
     status = as.integer(status_id),
@@ -88,6 +108,15 @@ drop_removed_args <- function(dots) {
 
 #' @export
 `$.multinomfourier` <- function(x, name) {
+  if (name %in% c("log(pval)", "log.pval", "log(p-value)", "log.p-value", "log.p_value")) {
+    name <- "log_pval"
+  }
+  if (tolower(name) == "poissonized") {
+    name <- "Poissonized"
+  }
+  if (name == "S0") {
+    name <- "stat_value"
+  }
   if (name %in% names(multfourier_old_names)) {
     new <- multfourier_old_names[[name]]
     warning(sprintf("'%s' is deprecated; use '%s' instead.", name, new), call. = FALSE)
@@ -98,6 +127,30 @@ drop_removed_args <- function(dots) {
 
 #' @export
 `$.multfourier` <- `$.multinomfourier`
+
+#' @export
+`[[.multinomfourier` <- function(x, i, ...) {
+  if (is.character(i) && length(i) == 1L) {
+    if (i %in% c("log(pval)", "log.pval", "log(p-value)", "log.p-value", "log.p_value")) {
+      i <- "log_pval"
+    }
+    if (tolower(i) == "poissonized") {
+      i <- "Poissonized"
+    }
+    if (i == "S0") {
+      i <- "stat_value"
+    }
+    if (i %in% names(multfourier_old_names)) {
+      new <- multfourier_old_names[[i]]
+      warning(sprintf("'%s' is deprecated; use '%s' instead.", i, new), call. = FALSE)
+      i <- new
+    }
+  }
+  NextMethod()
+}
+
+#' @export
+`[[.multfourier` <- `[[.multinomfourier`
 
 # Helper interno para validar x y p (y reescalar p si rescale_p = TRUE, como
 # chisq.test(): mismo valor por defecto y misma tolerancia)
@@ -132,7 +185,7 @@ resolve_stat_lambda <- function(stat, lambda = NULL) {
     stat_label <- "Pearson's Chi-Square"
   } else if (stat == "llr") {
     lambda_val <- 0.0
-    stat_label <- "Log-Likelihood Ratio"
+    stat_label <- "Log-likelihood ratio"
   } else if (stat == "pmf") {
     lambda_val <- NaN
     stat_label <- "Probability Mass Function"
@@ -224,8 +277,9 @@ resolve_n_threads <- function(n_threads) {
 #' @param ... Advanced options passed to the C engine, for example
 #'   \code{print_freq} (how often partial sums are printed when
 #'   \code{verbose = TRUE}; default 100) or \code{extrapolate} (0: no
-#'   extrapolation; 1: report the extrapolated value; 2: also stop on it, the
-#'   default). Unknown names produce a warning.
+#'   extrapolation; 1: report the extrapolated value; 2: also stop on it;
+#'   3: report the median of the deep extrapolation table over the final
+#'   window, the default). Unknown names produce a warning.
 #'
 #' @details
 #' \strong{Statistics.} All supported statistics are additive,
@@ -248,11 +302,11 @@ resolve_n_threads <- function(n_threads) {
 #' series for every additive statistic, but the number of terms needed for a given
 #' accuracy depends on the statistic. For \code{"llr"} and \code{"pmf"} the series
 #' typically converges in a few hundred to a few thousand terms. For \code{"chi2"},
-#' and often for \code{"pd"} unless \eqn{\lambda} is close to 0 (\eqn{\lambda = 2/3}
-#' has failed on real data), the values of the statistic lie on or near a
-#' lattice, the terms do not decay, and the series can fail to
-#' converge within \code{max_terms} (\code{status = 2}) or even return a negative
-#' value. In that case use \code{\link{pval_exact}} when it is feasible.
+#' and for \code{"pd"} as \eqn{\lambda} moves away from 0, the values of the
+#' statistic lie on or near a lattice and the terms decay much more slowly, so the
+#' series often needs many more terms and can fail to converge within
+#' \code{max_terms} (\code{status = 2}) or even return a negative value. In that
+#' case use \code{\link{pval_exact}} when it is feasible.
 #'
 #' \strong{Stopping rule and reported value.} The
 #' partial sums are accelerated with Wynn's epsilon algorithm (in the safeguarded
@@ -260,22 +314,47 @@ resolve_n_threads <- function(n_threads) {
 #' series stops as soon as either (i) \code{B} consecutive terms are each smaller
 #' than \code{rel_eps / B} relative to the partial sum, or (ii) the smoothed
 #' extrapolated values vary by at most a relative \code{rel_eps} over a trailing
-#' window covering the last half of the terms. The reported \pvalue{} is the last
-#' smoothed extrapolated value.
+#' window covering the last half of the terms. Two epsilon tables are kept in
+#' parallel: a shallow one, which drives the stopping rule above, and a deep one.
+#' With \code{extrapolate = 3} (the default) the reported \pvalue{} is the median
+#' of the deep table over the last quarter of the terms, which is markedly more
+#' accurate for lattice-like statistics such as \code{"chi2"}; with
+#' \code{extrapolate = 2} it is the last smoothed value of the shallow table.
+#' The stopping point is the same either way.
 #'
 #' \strong{Term evaluation.} With \code{exact_terms = FALSE} (default), terms are
 #' evaluated via a Poissonized Cauchy-integral evaluator, which is significantly
 #' faster on large instances. With \code{exact_terms = TRUE}, terms are evaluated
 #' via exact polynomial convolution.
 #'
+#' \strong{Underflow below double precision.} In standard IEEE 754 64-bit floating-point
+#' arithmetic, positive numbers smaller than approximately \eqn{5 \times 10^{-324}}
+#' underflow to exact zero. Because multinomial \pvalue{}s are mathematically strictly
+#' positive, whenever the true \pvalue{} falls below \eqn{5 \times 10^{-324}}, \code{pval}
+#' is returned as \code{NA} and an informative console note is issued. The exact
+#' magnitude is retained in \code{log_pval}, which can be exported or evaluated via
+#' arbitrary-precision software (e.g. \code{exp(log_pval)}). The series is summed
+#' relative to a common magnitude and the \pvalue{} is assembled in logarithms, so
+#' \code{log_pval} stays finite far below the range of the floating-point type, on
+#' every platform (it does not need \code{__float128}).
+#'
 #' @return An object of class \code{"multinomfourier"}: a list with components
 #' \describe{
 #'   \item{x, p}{The input counts and null probabilities (\code{p} after
 #'     rescaling, if \code{rescale_p = TRUE}).}
-#'   \item{pval}{The computed \pvalue{}.}
-#'   \item{stat}{Name of the test statistic, e.g. \code{"Log-Likelihood Ratio"}
+#'   \item{stat_value}{The observed value of the test statistic \eqn{T(x)}.
+#'   }
+#'   \item{pval}{The computed \pvalue{}, or \code{NA} if underflow occurs (when the
+#'     p-value is smaller than \eqn{5 \times 10^{-324}}, below the 64-bit double
+#'     precision limit) or if the algorithm did not converge.}
+#'   \item{log_pval}{Natural logarithm of the \pvalue{}. When the \pvalue{} is smaller
+#'     than \eqn{5 \times 10^{-324}}, \code{pval} is reported as \code{NA} to indicate
+#'     that it cannot be stored in 64-bit floating-point format without collapsing to
+#'     zero, but \code{log_pval} preserves the exact magnitude without underflow.}
+#'   \item{stat}{Name of the test statistic, e.g. \code{"Log-likelihood ratio"}
 #'     or \code{"power-divergence (lambda = 0.6667)"}.}
 #'   \item{method}{\code{"fourier"}.}
+#'   \item{Poissonized}{Logical; \code{TRUE} if the fast Poissonized Cauchy-integral evaluator was used (\code{exact_terms = FALSE}, the default), or \code{FALSE} if exact polynomial convolution was used (\code{exact_terms = TRUE}).}
 #'   \item{time}{Total wall-clock time in seconds.}
 #'   \item{gamma}{The exponential tilt \eqn{\gamma} applied to the statistic so
 #'     that the series terms stay within floating-point range (a saddlepoint
@@ -289,7 +368,9 @@ resolve_n_threads <- function(n_threads) {
 #'     \code{"Converged"}); \code{1}: \code{max_time} was reached; \code{2}:
 #'     \code{max_terms} was reached without meeting the stopping rule, so
 #'     \code{pval} is unreliable; \code{3}: the search for \code{gamma} failed;
-#'     \code{4}: numerical overflow in the evaluation of the terms. With a status
+#'     \code{4}: numerical overflow in the evaluation of the terms; \code{5}: the
+#'     first term of the series underflowed, so no \pvalue{} is returned
+#'     (\code{n_terms} is 0). With a status
 #'     other than 0, \code{pval} is the last value reached or \code{NA}.}
 #'   \item{message}{Human-readable version of \code{status}.}
 #'   \item{err_rel_ext}{Relative spread of the smoothed extrapolated values over
@@ -413,7 +494,7 @@ pval_fourier <- function(x,
   raw <- .Call(c_run_multfourier, as.double(x), as.double(p), opts)
   elapsed <- (proc.time() - t0)[["elapsed"]]
 
-  build_multfourier_s3(raw, x, p, elapsed, "fourier", st$label)
+  build_multfourier_s3(raw, x, p, elapsed, "fourier", st$label, exact_terms = exact_terms)
 }
 
 #' Exact multinomial test p-value
@@ -457,20 +538,26 @@ pval_fourier <- function(x,
 #' \describe{
 #'   \item{x, p}{The input counts and null probabilities (\code{p} after
 #'     rescaling, if \code{rescale_p = TRUE}).}
+#'   \item{stat_value}{The observed value of the test statistic \eqn{T(x)}.
+#'   }
 #'   \item{pval}{The exact \pvalue{}, up to floating-point rounding; \code{NA} if
-#'     \code{max_time} was reached.}
-#'   \item{stat}{Name of the test statistic, e.g. \code{"Log-Likelihood Ratio"}
+#'     \code{max_time} was reached or if the \pvalue{} is smaller than \eqn{5 \times 10^{-324}}.}
+#'   \item{log_pval}{Natural logarithm of the exact \pvalue{}. Preserves the exact
+#'     magnitude when \code{pval} is smaller than \eqn{5 \times 10^{-324}} and reported as \code{NA}.}
+#'   \item{stat}{Name of the test statistic, e.g. \code{"Log-likelihood ratio"}
 #'     or \code{"power-divergence (lambda = 0.6667)"}.}
 #'   \item{method}{\code{"exact"}.}
 #'   \item{status}{\code{0}: the computation finished; \code{1}:
-#'     \code{max_time} was reached before it finished.}
+#'     \code{max_time} was reached before it finished; \code{4}: the accumulated
+#'     probability came out zero or not finite, so the \pvalue{} would be wrong;
+#'     both \code{pval} and \code{log_pval} are then \code{NA}.}
 #'   \item{message}{Human-readable version of \code{status}. For \code{status = 0}
 #'     it reads \code{"Converged"}, a label shared with \code{\link{pval_fourier}}.}
 #'   \item{time}{Total wall-clock time in seconds.}
 #' }
 #' The components that describe the Fourier series are also present, so that
 #' results of both methods have the same structure, but are always \code{NA}:
-#' \code{gamma}, \code{time_gamma}, \code{W}, \code{n_terms}, \code{Q}, \code{D_Q},
+#' \code{Poissonized}, \code{gamma}, \code{time_gamma}, \code{W}, \code{n_terms}, \code{Q}, \code{D_Q},
 #' \code{err_rel_ext}, \code{err_rel_est}, \code{n_eff} and \code{nu_max_ratio}.
 #'
 #' @seealso \code{\link{pval_fourier}}, \code{\link{pval_flexible}}.
@@ -643,7 +730,7 @@ pval_flexible <- function(x,
   raw <- .Call(c_run_multfourier, as.double(x), as.double(p), opts)
   elapsed <- (proc.time() - t0)[["elapsed"]]
 
-  build_multfourier_s3(raw, x, p, elapsed, "flexible", st$label)
+  build_multfourier_s3(raw, x, p, elapsed, "flexible", st$label, exact_terms = exact_terms)
 }
 
 #' Print method for multinomfourier objects
@@ -674,25 +761,38 @@ pval_flexible <- function(x,
 #' fit_exact
 #' @export
 print.multinomfourier <- function(x, ...) {
-  cat("Multinomial Test (MultinomFourier)\n")
-  cat("----------------------------------\n")
-  cat(sprintf("%-11s: %s\n", "Method", x$method))
-  cat(sprintf("%-11s: %s\n", "Statistic", x$stat))
-  cat(sprintf("%-11s: %s\n", "p-value", format(x$pval, digits = 8)))
-  cat(sprintf("%-11s: %s\n", "Status", paste0(x$status, " (", x$message, ")")))
-  if (!is.null(x$gamma) && !is.na(x$gamma)) {
-    cat(sprintf("%-11s: %s\n", "Gamma", format(x$gamma, digits = 6)))
+  cat("Multinomial Goodness-of-Fit Test (MultinomFourier)\n")
+  cat("------------------------------------------------\n")
+  cat(sprintf("%-16s: %s\n", "Statistic", x$stat))
+  if (!is.null(x$stat_value) && !is.na(x$stat_value)) {
+    cat(sprintf("%-16s: %s\n", "Statistic value", format(x$stat_value, digits = 8)))
   }
-  if (!is.null(x$time_gamma) && !is.na(x$time_gamma)) {
-    cat(sprintf("%-11s: %s seconds\n", "Time gamma", format(x$time_gamma, digits = 4)))
+  cat(sprintf("%-16s: %s\n", "p-value", format(x$pval, digits = 8)))
+  if (!is.null(x$log_pval) && !is.na(x$log_pval)) {
+    cat(sprintf("%-16s: %s\n", "log(p-value)", format(x$log_pval, digits = 8)))
+  }
+  cat("\nComputation\n")
+  cat(sprintf("%-16s: %s\n", "Method", if (!is.null(x$method)) tools::toTitleCase(x$method) else "NA"))
+  if (!is.null(x$Poissonized) && !is.na(x$Poissonized)) {
+    cat(sprintf("%-16s: %s\n", "Poissonized", if (isTRUE(x$Poissonized)) "Yes" else "No"))
+  }
+  cat(sprintf("%-16s: %s\n", "Status", x$message))
+  if (!is.null(x$gamma) && !is.na(x$gamma)) {
+    cat(sprintf("%-16s: %s\n", "Gamma", format(x$gamma, digits = 6)))
   }
   if (!is.null(x$W) && !is.na(x$W)) {
-    cat(sprintf("%-11s: %s\n", "W", format(x$W, digits = 6)))
+    cat(sprintf("%-16s: %s\n", "W", format(x$W, digits = 6)))
   }
   if (!is.null(x$n_terms) && !is.na(x$n_terms)) {
-    cat(sprintf("%-11s: %s\n", "Terms", x$n_terms))
+    cat(sprintf("%-16s: %s\n", "Terms", x$n_terms))
   }
-  cat(sprintf("%-11s: %s seconds\n", "Time", sprintf("%.6f", x$time)))
+  if (!is.null(x$time_gamma) && !is.na(x$time_gamma)) {
+    cat(sprintf("%-16s: %s s\n", "Gamma time", format(x$time_gamma, digits = 4)))
+  }
+  cat(sprintf("%-16s: %s s\n", "Total time", format(x$time, digits = 4)))
+  if (is.na(x$pval) && !is.null(x$log_pval) && !is.na(x$log_pval) && is.finite(x$log_pval)) {
+    cat("\nWarning:\nThe p-value is too small to represent as a positive double.\n$pval was set to NA; use $log_pval.\n")
+  }
   invisible(x)
 }
 

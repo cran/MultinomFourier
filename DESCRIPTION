@@ -2,12 +2,12 @@ Package: MultinomFourier
 Type: Package
 Title: p-Values of Multinomial Goodness-of-Fit Tests by Fourier Series
         Inversion
-Version: 1.0
+Version: 1.1.0
 Authors@R: 
-    c(person("Charles", "Thraves", role = "aut"),
+    c(person("Charles", "Thraves", role = "aut", comment = c(ORCID = "0000-0001-7491-7477")),
       person("Pablo", "Rivas", role = c("aut", "cre"), email = "pablo.rivas.g@ug.uchile.cl"),
       person("Felipe", "Subiabre", role = "aut"))
-Author: Charles Thraves [aut],
+Author: Charles Thraves [aut] (ORCID: <https://orcid.org/0000-0001-7491-7477>),
   Pablo Rivas [aut, cre],
   Felipe Subiabre [aut]
 Maintainer: Pablo Rivas <pablo.rivas.g@ug.uchile.cl>
@@ -24,10 +24,11 @@ Description:
 License: GPL (>= 2)
 Encoding: UTF-8
 Imports: parallel
-Suggests: knitr, rmarkdown, ggplot2
+Suggests: knitr, rmarkdown, ggplot2, testthat (>= 3.0.0)
 VignetteBuilder: knitr
+Config/testthat/edition: 3
 Config/roxygen2/version: 8.1.0
 NeedsCompilation: yes
-Packaged: 2026-10-19 16:00:50 UTC; itspa
+Packaged: 2026-11-12 20:35:28 UTC; itspa
 Repository: CRAN
-Date/Publication: 2026-10-29 12:00:07 UTC
+Date/Publication: 2026-11-12 20:50:02 UTC

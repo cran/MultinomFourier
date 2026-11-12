@@ -688,17 +688,22 @@ be, not a bound on its error.</p>
 <span id="cb5-5"><a href="#cb5-5" tabindex="-1"></a>)</span>
 <span id="cb5-6"><a href="#cb5-6" tabindex="-1"></a></span>
 <span id="cb5-7"><a href="#cb5-7" tabindex="-1"></a>fit_278</span>
-<span id="cb5-8"><a href="#cb5-8" tabindex="-1"></a><span class="co">#&gt; Multinomial Test (MultinomFourier)</span></span>
-<span id="cb5-9"><a href="#cb5-9" tabindex="-1"></a><span class="co">#&gt; ----------------------------------</span></span>
-<span id="cb5-10"><a href="#cb5-10" tabindex="-1"></a><span class="co">#&gt; Method     : fourier</span></span>
-<span id="cb5-11"><a href="#cb5-11" tabindex="-1"></a><span class="co">#&gt; Statistic  : Log-Likelihood Ratio</span></span>
-<span id="cb5-12"><a href="#cb5-12" tabindex="-1"></a><span class="co">#&gt; p-value    : 9.2015753e-33</span></span>
-<span id="cb5-13"><a href="#cb5-13" tabindex="-1"></a><span class="co">#&gt; Status     : 0 (Converged)</span></span>
-<span id="cb5-14"><a href="#cb5-14" tabindex="-1"></a><span class="co">#&gt; Gamma      : 0.963835</span></span>
-<span id="cb5-15"><a href="#cb5-15" tabindex="-1"></a><span class="co">#&gt; Time gamma : 0.007766 seconds</span></span>
-<span id="cb5-16"><a href="#cb5-16" tabindex="-1"></a><span class="co">#&gt; W          : 909.592</span></span>
-<span id="cb5-17"><a href="#cb5-17" tabindex="-1"></a><span class="co">#&gt; Terms      : 9480</span></span>
-<span id="cb5-18"><a href="#cb5-18" tabindex="-1"></a><span class="co">#&gt; Time       : 0.308082 seconds</span></span></code></pre></div>
+<span id="cb5-8"><a href="#cb5-8" tabindex="-1"></a><span class="co">#&gt; Multinomial Goodness-of-Fit Test (MultinomFourier)</span></span>
+<span id="cb5-9"><a href="#cb5-9" tabindex="-1"></a><span class="co">#&gt; ------------------------------------------------</span></span>
+<span id="cb5-10"><a href="#cb5-10" tabindex="-1"></a><span class="co">#&gt; Statistic       : Log-likelihood ratio</span></span>
+<span id="cb5-11"><a href="#cb5-11" tabindex="-1"></a><span class="co">#&gt; Statistic value : 160.74342</span></span>
+<span id="cb5-12"><a href="#cb5-12" tabindex="-1"></a><span class="co">#&gt; p-value         : 9.2015705e-33</span></span>
+<span id="cb5-13"><a href="#cb5-13" tabindex="-1"></a><span class="co">#&gt; log(p-value)    : -73.765934</span></span>
+<span id="cb5-14"><a href="#cb5-14" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb5-15"><a href="#cb5-15" tabindex="-1"></a><span class="co">#&gt; Computation</span></span>
+<span id="cb5-16"><a href="#cb5-16" tabindex="-1"></a><span class="co">#&gt; Method          : Fourier</span></span>
+<span id="cb5-17"><a href="#cb5-17" tabindex="-1"></a><span class="co">#&gt; Poissonized     : Yes</span></span>
+<span id="cb5-18"><a href="#cb5-18" tabindex="-1"></a><span class="co">#&gt; Status          : Converged</span></span>
+<span id="cb5-19"><a href="#cb5-19" tabindex="-1"></a><span class="co">#&gt; Gamma           : 0.963835</span></span>
+<span id="cb5-20"><a href="#cb5-20" tabindex="-1"></a><span class="co">#&gt; W               : 909.592</span></span>
+<span id="cb5-21"><a href="#cb5-21" tabindex="-1"></a><span class="co">#&gt; Terms           : 9480</span></span>
+<span id="cb5-22"><a href="#cb5-22" tabindex="-1"></a><span class="co">#&gt; Gamma time      : 0.008156 s</span></span>
+<span id="cb5-23"><a href="#cb5-23" tabindex="-1"></a><span class="co">#&gt; Total time      : 0.3319 s</span></span></code></pre></div>
 <p>The returned <code>multinomfourier</code> object is a list; its main
 fields are:</p>
 <ul>
@@ -707,7 +712,7 @@ fields are:</p>
 (<code>&quot;Log-Likelihood Ratio&quot;</code>).</li>
 <li><code>fit_278$n_terms</code>: number of Fourier series terms
 evaluated (9480 here).</li>
-<li><code>fit_278$time</code>: total execution time in seconds (0.31 s
+<li><code>fit_278$time</code>: total execution time in seconds (0.33 s
 here).</li>
 <li><code>fit_278$method</code>: computational method used
 (<code>&quot;fourier&quot;</code>).</li>
@@ -747,9 +752,9 @@ large:</p>
 <span id="cb6-5"><a href="#cb6-5" tabindex="-1"></a></span>
 <span id="cb6-6"><a href="#cb6-6" tabindex="-1"></a>exact_fit_278<span class="sc">$</span>pval</span>
 <span id="cb6-7"><a href="#cb6-7" tabindex="-1"></a><span class="co">#&gt; [1] 9.201581e-33</span></span></code></pre></div>
-<p>On two threads (the default) it takes 4.8 s, against 0.31 s for
+<p>On two threads (the default) it takes 5.3 s, against 0.33 s for
 <code>pval_fourier()</code>, and the relative difference between the two
-<span class="math inline">\(p\)</span>-values is 6.0 × 10<sup>−7</sup>.
+<span class="math inline">\(p\)</span>-values is 1.1 × 10<sup>−6</sup>.
 The number of branches that must be explored, and hence the cost of
 <code>pval_exact()</code>, still grows quickly with the number of
 categories <span class="math inline">\(K\)</span> and the sample size
@@ -853,7 +858,7 @@ Rel_Error
 0.667
 </td>
 <td style="text-align:left;">
-5.7 × 10<sup>−5</sup>
+2.5 × 10<sup>−5</sup>
 </td>
 </tr>
 <tr>
@@ -870,7 +875,7 @@ Rel_Error
 0.870
 </td>
 <td style="text-align:left;">
-7.4 × 10<sup>−5</sup>
+7.3 × 10<sup>−5</sup>
 </td>
 </tr>
 <tr>
@@ -887,7 +892,7 @@ Rel_Error
 9.2 × 10<sup>−33</sup>
 </td>
 <td style="text-align:left;">
-6.0 × 10<sup>−7</sup>
+1.1 × 10<sup>−6</sup>
 </td>
 </tr>
 <tr>
@@ -904,7 +909,7 @@ Rel_Error
 0.775
 </td>
 <td style="text-align:left;">
-6.0 × 10<sup>−5</sup>
+4.7 × 10<sup>−5</sup>
 </td>
 </tr>
 <tr>
@@ -921,7 +926,7 @@ Rel_Error
 0.122
 </td>
 <td style="text-align:left;">
-2.9 × 10<sup>−5</sup>
+2.4 × 10<sup>−5</sup>
 </td>
 </tr>
 <tr>
@@ -938,7 +943,7 @@ Rel_Error
 0.030
 </td>
 <td style="text-align:left;">
-5.2 × 10<sup>−6</sup>
+6.7 × 10<sup>−6</sup>
 </td>
 </tr>
 <tr>
@@ -955,7 +960,7 @@ Rel_Error
 0.604
 </td>
 <td style="text-align:left;">
-5.2 × 10<sup>−6</sup>
+1.6 × 10<sup>−6</sup>
 </td>
 </tr>
 <tr>
@@ -972,7 +977,7 @@ Rel_Error
 0.029
 </td>
 <td style="text-align:left;">
-1.5 × 10<sup>−5</sup>
+2.4 × 10<sup>−5</sup>
 </td>
 </tr>
 <tr>
@@ -989,7 +994,7 @@ Rel_Error
 0.003
 </td>
 <td style="text-align:left;">
-5.8 × 10<sup>−5</sup>
+5.7 × 10<sup>−5</sup>
 </td>
 </tr>
 <tr>
@@ -1023,7 +1028,7 @@ Rel_Error
 0.584
 </td>
 <td style="text-align:left;">
-4.6 × 10<sup>−5</sup>
+5.9 × 10<sup>−5</sup>
 </td>
 </tr>
 <tr>
@@ -1040,7 +1045,7 @@ Rel_Error
 0.520
 </td>
 <td style="text-align:left;">
-6.3 × 10<sup>−5</sup>
+5.0 × 10<sup>−5</sup>
 </td>
 </tr>
 <tr>
@@ -1057,7 +1062,7 @@ Rel_Error
 0.808
 </td>
 <td style="text-align:left;">
-3.5 × 10<sup>−5</sup>
+1.2 × 10<sup>−5</sup>
 </td>
 </tr>
 <tr>
@@ -1074,7 +1079,7 @@ Rel_Error
 0.511
 </td>
 <td style="text-align:left;">
-3.2 × 10<sup>−5</sup>
+4.0 × 10<sup>−5</sup>
 </td>
 </tr>
 <tr>
@@ -1091,14 +1096,14 @@ Rel_Error
 0.257
 </td>
 <td style="text-align:left;">
-6.2 × 10<sup>−6</sup>
+1.2 × 10<sup>−5</sup>
 </td>
 </tr>
 </tbody>
 </table>
 <p>The largest relative error across the 15 stations is 1.3 ×
 10<sup>−4</sup>, at station 285. At station 278, where <span class="math inline">\(p \approx\)</span> 9.2 × 10<sup>−33</sup>, the
-relative error is 6.0 × 10<sup>−7</sup>. Note that <code>rel_eps</code>
+relative error is 1.1 × 10<sup>−6</sup>. Note that <code>rel_eps</code>
 controls the stopping rule, not the error: the observed relative errors
 can exceed it.</p>
 <p>On a <span class="math inline">\(-\log_{10}(p)\)</span> scale, where
@@ -1319,13 +1324,13 @@ Power Divergence (2/3)
 9.2 × 10<sup>−33</sup>
 </td>
 <td style="text-align:left;">
-6.6 × 10<sup>−18</sup> †
+1.6 × 10<sup>−20</sup> †
 </td>
 <td style="text-align:left;">
 9.2 × 10<sup>−33</sup>
 </td>
 <td style="text-align:left;">
-1.7 × 10<sup>−23</sup> †
+9.0 × 10<sup>−24</sup> †
 </td>
 </tr>
 <tr>
@@ -1614,7 +1619,7 @@ PMF
 Pearson (Chi2)
 </td>
 <td style="text-align:left;">
-6.6 × 10<sup>−18</sup>
+1.6 × 10<sup>−20</sup>
 </td>
 <td style="text-align:left;">
 10000
@@ -1648,7 +1653,7 @@ Log-Likelihood Ratio
 Power Divergence (2/3)
 </td>
 <td style="text-align:left;">
-1.7 × 10<sup>−23</sup>
+9.0 × 10<sup>−24</sup>
 </td>
 <td style="text-align:left;">
 10000
